@@ -1,0 +1,49 @@
+[workspace]
+members = [
+    "crates/gpui",
+    "crates/gpui_macros",
+    "crates/collections",
+    "crates/media",
+    "crates/sum_tree",
+    "crates/util",
+    "crates/refineable",
+    "crates/refineable/derive_refineable",
+]
+
+[workspace.dependencies]
+ctor = "0.2.6"
+derive_more = { version = "0.99.17" }
+futures = { version = "0.3" }
+lazy_static = { version = "1.4.0" }
+log = { version = "0.4.16", features = ["kv_unstable_serde"] }
+ordered-float = { version = "2.1.1" }
+parking_lot = { version = "0.11.1" }
+postage = { version = "0.5", features = ["futures-traits"] }
+rand = { version = "0.8.5" }
+refineable = { path = "./crates/refineable" }
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_derive = { version = "1.0", features = ["deserialize_in_place"] }
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
+smallvec = { version = "1.6", features = ["union"] }
+smol = { version = "1.2" }
+thiserror = { version = "1.0.29" }
+time = { version = "0.3", features = ["serde", "serde-well-known"] }
+schemars = { version = "0.8" }
+env_logger = { version = "0.9" }
+anyhow = { version = "1.0.57" }
+git2 = { version = "0.15", default-features = false }
+globset = { version = "0.4" }
+isahc = { version = "1.7.2", default-features = false, features = [
+    "static-curl",
+    "text-decoding",
+] }
+rust-embed = { version = "8.0", features = ["include-exclude"] }
+tempfile = { version = "3.9.0" }
+
+[package]
+name = "gpui_win"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gpui = { path = "crates/gpui" }
