@@ -47,3 +47,4 @@ edition = "2021"
 
 [dependencies]
 gpui = { path = "crates/gpui" }
+smallvec = { version = "1.6", features = ["union"] }

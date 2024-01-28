@@ -7,8 +7,6 @@ const uint AtlasTextureKind_Path = 2;
 const uint PathRasterizationInputIndex_Vertices = 0;
 const uint PathRasterizationInputIndex_AtlasTextureSize = 1;
 
-const uint ShadowInputIndex_Shadows = 1;
-
 const uint SpriteInputIndex_Sprites = 1;
 const uint SpriteInputIndex_AtlasTextureSize = 3;
 const uint SpriteInputIndex_AtlasTexture = 4;
@@ -17,8 +15,6 @@ const uint SurfaceInputIndex_Surfaces = 1;
 const uint SurfaceInputIndex_TextureSize = 3;
 const uint SurfaceInputIndex_YTexture = 4;
 const uint SurfaceInputIndex_CbCrTexture = 5;
-
-const uint UnderlineInputIndex_Underlines = 1;
 
 const vec2 unit_vertices[6] = vec2[6](
     vec2(0.0, 0.0),

@@ -20,10 +20,12 @@ pub(crate) struct VulkanRenderer {
     images: Vec<vk::Image>,
     queue: vk::Queue,
     cmd_pool: vk::CommandPool,
-    pipeline: Pipeline,
+    renderpass: vk::RenderPass,
+    quads_pipeline: Pipeline,
+    shadows_pipeline: Pipeline,
+    underlines_pipeline: Pipeline,
     framebuffers: Vec<vk::Framebuffer>,
     desc_pool: vk::DescriptorPool,
-    desc_set: vk::DescriptorSet,
     buffer: vk::Buffer,
     mapped: *mut c_void,
 }
@@ -117,10 +119,41 @@ impl VulkanRenderer {
                 )
                 .unwrap();
 
-            let pipeline = Pipeline::build_pipeline(
+            let renderpass = Self::create_renderpass(&device);
+
+            let desc_pool = device
+                .create_descriptor_pool(
+                    &vk::DescriptorPoolCreateInfo::default()
+                        .max_sets(3)
+                        .pool_sizes(&[vk::DescriptorPoolSize::default()
+                            .descriptor_count(1)
+                            .ty(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)]),
+                    None,
+                )
+                .unwrap();
+
+            let quads_pipeline = Pipeline::build_pipeline(
                 &device,
                 include_spirv!("src/platform/windows/shaders/quad_vertex.glsl", vert),
                 include_spirv!("src/platform/windows/shaders/quad_fragment.glsl", frag),
+                renderpass,
+                desc_pool,
+            );
+
+            let shadows_pipeline = Pipeline::build_pipeline(
+                &device,
+                include_spirv!("src/platform/windows/shaders/shadow_vertex.glsl", vert),
+                include_spirv!("src/platform/windows/shaders/shadow_fragment.glsl", frag),
+                renderpass,
+                desc_pool,
+            );
+
+            let underlines_pipeline = Pipeline::build_pipeline(
+                &device,
+                include_spirv!("src/platform/windows/shaders/underline_vertex.glsl", vert),
+                include_spirv!("src/platform/windows/shaders/underline_fragment.glsl", frag),
+                renderpass,
+                desc_pool,
             );
 
             let framebuffers = image_views
@@ -129,7 +162,7 @@ impl VulkanRenderer {
                     device
                         .create_framebuffer(
                             &vk::FramebufferCreateInfo::default()
-                                .render_pass(pipeline.renderpass)
+                                .render_pass(renderpass)
                                 .width(1424)
                                 .height(714)
                                 .layers(1)
@@ -140,46 +173,7 @@ impl VulkanRenderer {
                 })
                 .collect::<Vec<_>>();
 
-            let desc_pool = device
-                .create_descriptor_pool(
-                    &vk::DescriptorPoolCreateInfo::default()
-                        .max_sets(1)
-                        .pool_sizes(&[vk::DescriptorPoolSize::default()
-                            .descriptor_count(1)
-                            .ty(vk::DescriptorType::STORAGE_BUFFER)]),
-                    None,
-                )
-                .unwrap();
-            let desc_set = device
-                .allocate_descriptor_sets(
-                    &vk::DescriptorSetAllocateInfo::default()
-                        .descriptor_pool(desc_pool)
-                        .set_layouts(&[pipeline.desc_set_layout]),
-                )
-                .unwrap()[0];
-
-            let buffer = device
-                .create_buffer(
-                    &vk::BufferCreateInfo::default()
-                        .size(32 * 1024 * 1024)
-                        .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
-                        .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                        .queue_family_indices(&[0]),
-                    None,
-                )
-                .unwrap();
-            let device_mem = device
-                .allocate_memory(
-                    &vk::MemoryAllocateInfo::default()
-                        .allocation_size(32 * 1024 * 1024)
-                        .memory_type_index(2),
-                    None,
-                )
-                .unwrap();
-            device.bind_buffer_memory(buffer, device_mem, 0).unwrap();
-            let mapped = device
-                .map_memory(device_mem, 0, vk::WHOLE_SIZE, vk::MemoryMapFlags::empty())
-                .unwrap();
+            let (buffer, mapped) = Self::create_buffer(&device);
 
             Self {
                 sprite_atlas: Arc::new(VulkanAtlas::new()),
@@ -193,10 +187,12 @@ impl VulkanRenderer {
                 images,
                 queue,
                 cmd_pool,
-                pipeline,
+                renderpass,
+                quads_pipeline,
+                shadows_pipeline,
+                underlines_pipeline,
                 framebuffers,
                 desc_pool,
-                desc_set,
                 buffer,
                 mapped,
             }
@@ -208,138 +204,217 @@ impl VulkanRenderer {
     }
 
     pub fn draw(&mut self, scene: &Scene) {
+        let mut offset = 0;
+
         unsafe {
+            let fence = self.create_fence();
+
+            let (index, _) = self
+                .swapchain_loader
+                .acquire_next_image(self.swapchain, u64::MAX, vk::Semaphore::null(), fence)
+                .unwrap();
+
+            self.device
+                .wait_for_fences(&[fence], true, u64::MAX)
+                .unwrap();
+
+            // currently broken, validation layer will complain
+            self.device.update_descriptor_sets(
+                &[vk::WriteDescriptorSet::default()
+                    .dst_set(self.quads_pipeline.desc_set)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
+                    .buffer_info(&[vk::DescriptorBufferInfo::default()
+                        .buffer(self.buffer)
+                        .range(vk::WHOLE_SIZE)])],
+                &[],
+            );
+
+            // currently broken, validation layer will complain
+            self.device.update_descriptor_sets(
+                &[vk::WriteDescriptorSet::default()
+                    .dst_set(self.shadows_pipeline.desc_set)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
+                    .buffer_info(&[vk::DescriptorBufferInfo::default()
+                        .buffer(self.buffer)
+                        .range(vk::WHOLE_SIZE)])],
+                &[],
+            );
+
+            let cmd_buffer = self
+                .device
+                .allocate_command_buffers(
+                    &vk::CommandBufferAllocateInfo::default()
+                        .command_pool(self.cmd_pool)
+                        .level(vk::CommandBufferLevel::PRIMARY)
+                        .command_buffer_count(1),
+                )
+                .unwrap()[0];
+
+            self.device
+                .begin_command_buffer(cmd_buffer, &vk::CommandBufferBeginInfo::default())
+                .unwrap();
+
+            self.device.cmd_begin_render_pass(
+                cmd_buffer,
+                &vk::RenderPassBeginInfo::default()
+                    .render_pass(self.renderpass)
+                    .clear_values(&[vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    }])
+                    .render_area(vk::Rect2D {
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                        extent: vk::Extent2D {
+                            width: 1424,
+                            height: 714,
+                        },
+                    })
+                    .framebuffer(self.framebuffers[index as usize]),
+                vk::SubpassContents::INLINE,
+            );
+
             for batch in scene.batches() {
-                #[allow(clippy::single_match)]
                 match batch {
                     PrimitiveBatch::Quads(quads) => {
+                        // temporal fix on alignment, revisit later.
+                        offset = ((offset + 255) / 256) * 256;
+                        let quad_bytes_len = std::mem::size_of_val(quads);
                         std::ptr::copy_nonoverlapping(
                             quads.as_ptr() as *const u8,
-                            self.mapped as *mut u8,
-                            std::mem::size_of_val(quads),
+                            (self.mapped as *mut u8).add(offset),
+                            quad_bytes_len,
                         );
 
-                        self.device.update_descriptor_sets(
-                            &[vk::WriteDescriptorSet::default()
-                                .dst_set(self.desc_set)
-                                .descriptor_count(1)
-                                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                                .buffer_info(&[vk::DescriptorBufferInfo::default()
-                                    .buffer(self.buffer)
-                                    .range(vk::WHOLE_SIZE)])],
-                            &[],
-                        );
-
-                        let fence = self
-                            .device
-                            .create_fence(&vk::FenceCreateInfo::default(), None)
-                            .unwrap();
-
-                        let (index, _) = self
-                            .swapchain_loader
-                            .acquire_next_image(
-                                self.swapchain,
-                                u64::MAX,
-                                vk::Semaphore::null(),
-                                fence,
-                            )
-                            .unwrap();
-
-                        self.device
-                            .wait_for_fences(&[fence], true, u64::MAX)
-                            .unwrap();
-
-                        let cmd_buffer = self
-                            .device
-                            .allocate_command_buffers(
-                                &vk::CommandBufferAllocateInfo::default()
-                                    .command_pool(self.cmd_pool)
-                                    .level(vk::CommandBufferLevel::PRIMARY)
-                                    .command_buffer_count(1),
-                            )
-                            .unwrap()[0];
-
-                        self.device
-                            .begin_command_buffer(
-                                cmd_buffer,
-                                &vk::CommandBufferBeginInfo::default(),
-                            )
-                            .unwrap();
-
-                        self.device.cmd_begin_render_pass(
+                        self.quads_pipeline.bind(
+                            &self.device,
                             cmd_buffer,
-                            &vk::RenderPassBeginInfo::default()
-                                .render_pass(self.pipeline.renderpass)
-                                .clear_values(&[vk::ClearValue {
-                                    color: vk::ClearColorValue {
-                                        float32: [0.0, 0.0, 0.0, 1.0],
-                                    },
-                                }])
-                                .render_area(vk::Rect2D {
-                                    offset: vk::Offset2D { x: 0, y: 0 },
-                                    extent: vk::Extent2D {
-                                        width: 1424,
-                                        height: 714,
-                                    },
-                                })
-                                .framebuffer(self.framebuffers[index as usize]),
-                            vk::SubpassContents::INLINE,
-                        );
-                        self.device.cmd_bind_pipeline(
-                            cmd_buffer,
-                            vk::PipelineBindPoint::GRAPHICS,
-                            self.pipeline.pipeline,
-                        );
-                        self.device.cmd_bind_descriptor_sets(
-                            cmd_buffer,
-                            vk::PipelineBindPoint::GRAPHICS,
-                            self.pipeline.pipeline_layout,
-                            0,
-                            &[self.desc_set],
-                            &[],
-                        );
-                        self.device.cmd_push_constants(
-                            cmd_buffer,
-                            self.pipeline.pipeline_layout,
-                            vk::ShaderStageFlags::VERTEX,
-                            0,
+                            offset as u32,
                             bytemuck::cast_slice(&[1424, 714]),
                         );
+
                         self.device
                             .cmd_draw(cmd_buffer, 6, quads.len() as u32, 0, 0);
-                        self.device.cmd_end_render_pass(cmd_buffer);
 
-                        self.device.end_command_buffer(cmd_buffer).unwrap();
+                        offset += quad_bytes_len;
+                    }
+                    PrimitiveBatch::Shadows(shadows) => {
+                        // temporal fix on alignment, revisit later.
+                        offset = ((offset + 255) / 256) * 256;
+                        let shadow_bytes_len = std::mem::size_of_val(shadows);
+                        std::ptr::copy_nonoverlapping(
+                            shadows.as_ptr() as *const u8,
+                            (self.mapped as *mut u8).add(offset),
+                            shadow_bytes_len,
+                        );
 
-                        let fence = self
-                            .device
-                            .create_fence(&vk::FenceCreateInfo::default(), None)
-                            .unwrap();
+                        self.shadows_pipeline.bind(
+                            &self.device,
+                            cmd_buffer,
+                            offset as u32,
+                            bytemuck::cast_slice(&[1424, 714]),
+                        );
 
                         self.device
-                            .queue_submit(
-                                self.queue,
-                                &[vk::SubmitInfo::default().command_buffers(&[cmd_buffer])],
-                                fence,
-                            )
-                            .unwrap();
+                            .cmd_draw(cmd_buffer, 6, shadows.len() as u32, 0, 0);
 
-                        self.device
-                            .wait_for_fences(&[fence], true, u64::MAX)
-                            .unwrap();
-
-                        self.swapchain_loader
-                            .queue_present(
-                                self.queue,
-                                &vk::PresentInfoKHR::default()
-                                    .swapchains(&[self.swapchain])
-                                    .image_indices(&[index]),
-                            )
-                            .unwrap();
+                        offset += shadow_bytes_len;
                     }
                     _ => {}
                 }
             }
+
+            self.device.cmd_end_render_pass(cmd_buffer);
+            self.device.end_command_buffer(cmd_buffer).unwrap();
+
+            let fence = self
+                .device
+                .create_fence(&vk::FenceCreateInfo::default(), None)
+                .unwrap();
+
+            self.device
+                .queue_submit(
+                    self.queue,
+                    &[vk::SubmitInfo::default().command_buffers(&[cmd_buffer])],
+                    fence,
+                )
+                .unwrap();
+
+            self.device
+                .wait_for_fences(&[fence], true, u64::MAX)
+                .unwrap();
+
+            self.swapchain_loader
+                .queue_present(
+                    self.queue,
+                    &vk::PresentInfoKHR::default()
+                        .swapchains(&[self.swapchain])
+                        .image_indices(&[index]),
+                )
+                .unwrap();
         }
+    }
+
+    fn create_renderpass(device: &Device) -> vk::RenderPass {
+        let attachment_description = vk::AttachmentDescription::default()
+            .format(vk::Format::B8G8R8A8_UNORM)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
+
+        let attachment_reference = vk::AttachmentReference::default()
+            .attachment(0)
+            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+
+        let subpass_description = vk::SubpassDescription::default()
+            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+            .color_attachments(std::slice::from_ref(&attachment_reference));
+
+        let create_info = vk::RenderPassCreateInfo::default()
+            .attachments(std::slice::from_ref(&attachment_description))
+            .subpasses(std::slice::from_ref(&subpass_description));
+
+        unsafe { device.create_render_pass(&create_info, None) }.unwrap()
+    }
+
+    fn create_buffer(device: &Device) -> (vk::Buffer, *mut c_void) {
+        let buffer = {
+            let create_info = vk::BufferCreateInfo::default()
+                .size(32 * 1024 * 1024)
+                .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .queue_family_indices(&[0]);
+
+            unsafe { device.create_buffer(&create_info, None) }.unwrap()
+        };
+
+        let device_mem = {
+            let allocate_info = vk::MemoryAllocateInfo::default()
+                .allocation_size(32 * 1024 * 1024)
+                .memory_type_index(2);
+
+            unsafe { device.allocate_memory(&allocate_info, None) }.unwrap()
+        };
+
+        unsafe { device.bind_buffer_memory(buffer, device_mem, 0) }.unwrap();
+
+        let mapped = unsafe {
+            device.map_memory(device_mem, 0, vk::WHOLE_SIZE, vk::MemoryMapFlags::empty())
+        }
+        .unwrap();
+
+        (buffer, mapped)
+    }
+
+    fn create_fence(&self) -> vk::Fence {
+        let create_info = vk::FenceCreateInfo::default();
+
+        unsafe { self.device.create_fence(&create_info, None) }.unwrap()
     }
 }
