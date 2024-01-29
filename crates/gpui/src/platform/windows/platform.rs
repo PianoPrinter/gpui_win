@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use windows_sys::Win32::UI::WindowsAndMessaging::{DispatchMessageA, GetMessageA};
+use windows::Win32::UI::WindowsAndMessaging::{DispatchMessageA, GetMessageA};
 
 use crate::{
     Action, BackgroundExecutor, ForegroundExecutor, Platform, PlatformInput, SemanticVersion,
@@ -70,7 +70,7 @@ impl Platform for WindowsPlatform {
         unsafe {
             let mut message = std::mem::zeroed();
 
-            while GetMessageA(&mut message, 0, 0, 0) != 0 {
+            while GetMessageA(&mut message, None, 0, 0).into() {
                 DispatchMessageA(&message);
             }
         }

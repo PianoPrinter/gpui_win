@@ -1,4 +1,4 @@
-use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::PlatformDispatcher;
 

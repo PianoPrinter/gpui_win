@@ -1,3 +1,5 @@
+mod pipeline;
+
 use std::{ffi::c_void, sync::Arc};
 
 use ash::*;
@@ -5,7 +7,9 @@ use inline_spirv::include_spirv;
 
 use crate::{PrimitiveBatch, Scene};
 
-use super::{vulkan_atlas::VulkanAtlas, vulkan_pipeline::Pipeline};
+use self::pipeline::Pipeline;
+
+use super::vulkan_atlas::VulkanAtlas;
 
 #[allow(unused)]
 pub(crate) struct VulkanRenderer {
@@ -218,27 +222,25 @@ impl VulkanRenderer {
                 .wait_for_fences(&[fence], true, u64::MAX)
                 .unwrap();
 
-            // currently broken, validation layer will complain
-            self.device.update_descriptor_sets(
-                &[vk::WriteDescriptorSet::default()
-                    .dst_set(self.quads_pipeline.desc_set)
-                    .descriptor_count(1)
-                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
-                    .buffer_info(&[vk::DescriptorBufferInfo::default()
-                        .buffer(self.buffer)
-                        .range(vk::WHOLE_SIZE)])],
-                &[],
-            );
+            let size_batches = std::mem::size_of_val(&scene.batches()) as u64;
 
-            // currently broken, validation layer will complain
             self.device.update_descriptor_sets(
-                &[vk::WriteDescriptorSet::default()
-                    .dst_set(self.shadows_pipeline.desc_set)
-                    .descriptor_count(1)
-                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
-                    .buffer_info(&[vk::DescriptorBufferInfo::default()
-                        .buffer(self.buffer)
-                        .range(vk::WHOLE_SIZE)])],
+                &[
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(self.quads_pipeline.desc_set)
+                        .descriptor_count(1)
+                        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
+                        .buffer_info(&[vk::DescriptorBufferInfo::default()
+                            .buffer(self.buffer)
+                            .range(size_batches)]),
+                    vk::WriteDescriptorSet::default()
+                        .dst_set(self.shadows_pipeline.desc_set)
+                        .descriptor_count(1)
+                        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
+                        .buffer_info(&[vk::DescriptorBufferInfo::default()
+                            .buffer(self.buffer)
+                            .range(size_batches)]),
+                ],
                 &[],
             );
 
@@ -321,6 +323,9 @@ impl VulkanRenderer {
                             .cmd_draw(cmd_buffer, 6, shadows.len() as u32, 0, 0);
 
                         offset += shadow_bytes_len;
+                    }
+                    PrimitiveBatch::Underlines(underlines) => {
+                        dbg!(underlines.len());
                     }
                     _ => {}
                 }

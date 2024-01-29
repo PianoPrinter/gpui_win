@@ -1,7 +1,7 @@
 use std::{ffi::c_void, rc::Rc, sync::Arc};
 
 use parking_lot::Mutex;
-use windows_sys::{
+use windows::{
     core::*, Win32::Foundation::*, Win32::System::LibraryLoader::GetModuleHandleA,
     Win32::UI::WindowsAndMessaging::*,
 };
@@ -26,12 +26,12 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
                     callback();
                     rc2.lock().request_frame_callback = Some(callback);
                 }
-                0
+                LRESULT(0)
             }
             WM_DESTROY => {
                 println!("WM_DESTROY");
                 PostQuitMessage(0);
-                0
+                LRESULT(0)
             }
             _ => DefWindowProcA(window, message, wparam, lparam),
         }
@@ -58,29 +58,25 @@ unsafe impl Send for WindowsWindowState {}
 impl WindowsWindow {
     pub fn open() -> Self {
         unsafe {
-            let instance = GetModuleHandleA(std::ptr::null());
-            debug_assert!(instance != 0);
+            let instance = GetModuleHandleA(None).unwrap();
+            debug_assert!(instance.0 != 0);
 
             let window_class = s!("window");
 
             let wc = WNDCLASSA {
-                hCursor: LoadCursorW(0, IDC_ARROW),
-                hInstance: instance,
+                hCursor: LoadCursorW(None, IDC_ARROW).unwrap(),
+                hInstance: instance.into(),
                 lpszClassName: window_class,
                 style: CS_HREDRAW | CS_VREDRAW,
                 lpfnWndProc: Some(wndproc),
-                cbClsExtra: 0,
-                cbWndExtra: 0,
-                hIcon: 0,
-                hbrBackground: 0,
-                lpszMenuName: std::ptr::null(),
+                ..Default::default()
             };
 
             let atom = RegisterClassA(&wc);
             debug_assert!(atom != 0);
 
             let hwnd = CreateWindowExA(
-                0,
+                WINDOW_EX_STYLE::default(),
                 window_class,
                 s!("GPUI - Windows"), // For now, hardcoded window title
                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
@@ -88,14 +84,14 @@ impl WindowsWindow {
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
-                0,
-                0,
+                None,
+                None,
                 instance,
-                std::ptr::null(),
+                None,
             );
 
             let window = Self(Arc::new(Mutex::new(WindowsWindowState {
-                renderer: VulkanRenderer::new(instance, hwnd),
+                renderer: VulkanRenderer::new(instance.0, hwnd.0),
                 request_frame_callback: None,
                 event_callback: None,
                 activate_callback: None,
