@@ -2,8 +2,6 @@ use ash::*;
 use cstr::cstr;
 
 pub struct Pipeline {
-    pub desc_set_layout: vk::DescriptorSetLayout,
-    pub desc_set: vk::DescriptorSet,
     pub pipeline_layout: vk::PipelineLayout,
     pub pipeline: vk::Pipeline,
 }
@@ -14,9 +12,8 @@ impl Pipeline {
         vert_code: &[u32],
         frag_code: &[u32],
         renderpass: vk::RenderPass,
-        desc_pool: vk::DescriptorPool,
+        desc_set_layout: vk::DescriptorSetLayout,
     ) -> Self {
-        let desc_set_layout = Self::create_descriptor_set_layout(device);
         let pipeline_layout = Self::create_pipeline_layout(device, desc_set_layout);
         let vert_shader_module = Self::create_shader_module(device, vert_code);
         let frag_shader_module = Self::create_shader_module(device, frag_code);
@@ -24,14 +21,6 @@ impl Pipeline {
         let tessellation = vk::PipelineTessellationStateCreateInfo::default();
         let depth_stencil = vk::PipelineDepthStencilStateCreateInfo::default();
         let dynamic = vk::PipelineDynamicStateCreateInfo::default();
-
-        let desc_set = {
-            let allocate_info = vk::DescriptorSetAllocateInfo::default()
-                .descriptor_pool(desc_pool)
-                .set_layouts(std::slice::from_ref(&desc_set_layout));
-
-            unsafe { device.allocate_descriptor_sets(&allocate_info) }.unwrap()[0]
-        };
 
         let vert_shader_stage = vk::PipelineShaderStageCreateInfo::default()
             .stage(vk::ShaderStageFlags::VERTEX)
@@ -107,8 +96,6 @@ impl Pipeline {
         .unwrap()[0];
 
         Self {
-            desc_set_layout,
-            desc_set,
             pipeline_layout,
             pipeline,
         }
@@ -120,6 +107,7 @@ impl Pipeline {
         cmd_buffer: vk::CommandBuffer,
         offset: u32,
         push_constants: &[u8],
+        desc_set: vk::DescriptorSet,
     ) {
         unsafe {
             device.cmd_bind_pipeline(cmd_buffer, vk::PipelineBindPoint::GRAPHICS, self.pipeline);
@@ -128,7 +116,7 @@ impl Pipeline {
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline_layout,
                 0,
-                &[self.desc_set],
+                &[desc_set],
                 &[offset],
             );
             device.cmd_push_constants(
@@ -139,19 +127,6 @@ impl Pipeline {
                 push_constants,
             );
         }
-    }
-
-    fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
-        let descriptor_set_layout_binding = vk::DescriptorSetLayoutBinding::default()
-            .binding(0)
-            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
-            .descriptor_count(1)
-            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT);
-
-        let create_info = vk::DescriptorSetLayoutCreateInfo::default()
-            .bindings(std::slice::from_ref(&descriptor_set_layout_binding));
-
-        unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
     }
 
     fn create_pipeline_layout(

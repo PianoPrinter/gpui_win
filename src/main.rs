@@ -1,4 +1,5 @@
 // WIN_DIRTY <- commented out things, for windows port
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use gpui::*;
 use smallvec::smallvec;
@@ -11,7 +12,7 @@ impl Render for HelloWorld {
     fn render(&mut self, _cx: &mut ViewContext<Self>) -> impl IntoElement {
         div()
             .flex()
-            .bg(rgb(0xffffff))
+            .bg(rgb(0x222222))
             .size_full()
             .justify_center()
             .items_center()
@@ -25,7 +26,7 @@ impl Render for HelloWorld {
                         color: Hsla::from(rgb(0xff6159)),
                         blur_radius: Pixels(30.0),
                         offset: Point::default(),
-                        spread_radius: Pixels(15.0),
+                        spread_radius: Pixels::default(),
                     }]),
             )
             .child(
@@ -38,7 +39,7 @@ impl Render for HelloWorld {
                         color: Hsla::from(rgb(0xffbd2e)),
                         blur_radius: Pixels(30.0),
                         offset: Point::default(),
-                        spread_radius: Pixels(15.0),
+                        spread_radius: Pixels::default(),
                     }]),
             )
             .child(
@@ -51,7 +52,7 @@ impl Render for HelloWorld {
                         color: Hsla::from(rgb(0x28c941)),
                         blur_radius: Pixels(30.0),
                         offset: Point::default(),
-                        spread_radius: Pixels(15.0),
+                        spread_radius: Pixels::default(),
                     }]),
             )
     }

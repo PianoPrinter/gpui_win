@@ -25,6 +25,8 @@ pub(crate) struct VulkanRenderer {
     queue: vk::Queue,
     cmd_pool: vk::CommandPool,
     renderpass: vk::RenderPass,
+    desc_set_layout: vk::DescriptorSetLayout,
+    desc_set: vk::DescriptorSet,
     quads_pipeline: Pipeline,
     shadows_pipeline: Pipeline,
     underlines_pipeline: Pipeline,
@@ -36,170 +38,182 @@ pub(crate) struct VulkanRenderer {
 
 impl VulkanRenderer {
     pub fn new(hinstance: isize, hwnd: isize) -> Self {
-        unsafe {
-            let entry = Entry::load().unwrap();
-            let instance = entry
-                .create_instance(
-                    &vk::InstanceCreateInfo::default().enabled_extension_names(&[
-                        extensions::khr::Surface::NAME.as_ptr(),
-                        extensions::khr::Win32Surface::NAME.as_ptr(),
-                    ]),
-                    None,
-                )
-                .unwrap();
-            let win32_surface_loader = extensions::khr::Win32Surface::new(&entry, &instance);
-            let surface = win32_surface_loader
-                .create_win32_surface(
-                    &vk::Win32SurfaceCreateInfoKHR::default()
-                        .hinstance(hinstance)
-                        .hwnd(hwnd),
-                    None,
-                )
-                .unwrap();
-            let pdevice = instance.enumerate_physical_devices().unwrap()[0];
-            let device = instance
-                .create_device(
-                    pdevice,
-                    &vk::DeviceCreateInfo::default()
-                        .queue_create_infos(&[vk::DeviceQueueCreateInfo::default()
-                            .queue_family_index(0)
-                            .queue_priorities(&[0.0])])
-                        .enabled_features(
-                            &vk::PhysicalDeviceFeatures::default().shader_clip_distance(true),
-                        )
-                        .enabled_extension_names(&[extensions::khr::Swapchain::NAME.as_ptr()]),
-                    None,
-                )
-                .unwrap();
-            let swapchain_loader = extensions::khr::Swapchain::new(&instance, &device);
-            let swapchain = swapchain_loader
-                .create_swapchain(
-                    &vk::SwapchainCreateInfoKHR::default()
-                        .surface(surface)
-                        .min_image_count(2)
-                        .image_format(vk::Format::B8G8R8A8_UNORM)
-                        .image_color_space(vk::ColorSpaceKHR::SRGB_NONLINEAR)
-                        .image_array_layers(1)
-                        .image_extent(vk::Extent2D {
-                            width: 1424,
-                            height: 714,
-                        })
-                        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-                        .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-                        .queue_family_indices(&[0])
-                        .pre_transform(vk::SurfaceTransformFlagsKHR::IDENTITY)
-                        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-                        .present_mode(vk::PresentModeKHR::FIFO_RELAXED)
-                        .clipped(true),
-                    None,
-                )
-                .unwrap();
-            let images = swapchain_loader.get_swapchain_images(swapchain).unwrap();
-            let image_views = images
-                .iter()
-                .map(|image| {
-                    device
-                        .create_image_view(
-                            &vk::ImageViewCreateInfo::default()
-                                .image(*image)
-                                .view_type(vk::ImageViewType::TYPE_2D)
-                                .format(vk::Format::B8G8R8A8_UNORM)
-                                .subresource_range(
-                                    vk::ImageSubresourceRange::default()
-                                        .aspect_mask(vk::ImageAspectFlags::COLOR)
-                                        .level_count(1)
-                                        .layer_count(1),
-                                ),
-                            None,
-                        )
-                        .unwrap()
+        let entry = unsafe { Entry::load().unwrap() };
+
+        let instance = {
+            let extension_names = [
+                extensions::khr::Surface::NAME.as_ptr(),
+                extensions::khr::Win32Surface::NAME.as_ptr(),
+            ];
+            let create_info =
+                vk::InstanceCreateInfo::default().enabled_extension_names(&extension_names);
+
+            unsafe { entry.create_instance(&create_info, None) }.unwrap()
+        };
+
+        let win32_surface_loader = extensions::khr::Win32Surface::new(&entry, &instance);
+
+        let surface = {
+            let create_info = vk::Win32SurfaceCreateInfoKHR::default()
+                .hinstance(hinstance)
+                .hwnd(hwnd);
+
+            unsafe { win32_surface_loader.create_win32_surface(&create_info, None) }.unwrap()
+        };
+
+        let pdevice = unsafe { instance.enumerate_physical_devices() }.unwrap()[0];
+
+        let device = {
+            let queue_create_info = [vk::DeviceQueueCreateInfo::default()
+                .queue_family_index(0)
+                .queue_priorities(&[0.0])];
+            let features = vk::PhysicalDeviceFeatures::default().shader_clip_distance(true);
+            let extension_names = [extensions::khr::Swapchain::NAME.as_ptr()];
+            let create_info = vk::DeviceCreateInfo::default()
+                .queue_create_infos(&queue_create_info)
+                .enabled_features(&features)
+                .enabled_extension_names(&extension_names);
+
+            unsafe { instance.create_device(pdevice, &create_info, None) }.unwrap()
+        };
+
+        let swapchain_loader = extensions::khr::Swapchain::new(&instance, &device);
+
+        let swapchain = {
+            let create_info = vk::SwapchainCreateInfoKHR::default()
+                .surface(surface)
+                .min_image_count(2)
+                .image_format(vk::Format::B8G8R8A8_UNORM)
+                .image_color_space(vk::ColorSpaceKHR::SRGB_NONLINEAR)
+                .image_array_layers(1)
+                .image_extent(vk::Extent2D {
+                    width: 1424,
+                    height: 714,
                 })
-                .collect::<Vec<_>>();
-            let queue = device.get_device_queue(0, 0);
-            let cmd_pool = device
-                .create_command_pool(
-                    &vk::CommandPoolCreateInfo::default().queue_family_index(0),
-                    None,
-                )
-                .unwrap();
+                .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+                .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .queue_family_indices(&[0])
+                .pre_transform(vk::SurfaceTransformFlagsKHR::IDENTITY)
+                .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+                .present_mode(vk::PresentModeKHR::FIFO_RELAXED)
+                .clipped(true);
 
-            let renderpass = Self::create_renderpass(&device);
+            unsafe { swapchain_loader.create_swapchain(&create_info, None) }.unwrap()
+        };
 
-            let desc_pool = device
-                .create_descriptor_pool(
-                    &vk::DescriptorPoolCreateInfo::default()
-                        .max_sets(3)
-                        .pool_sizes(&[vk::DescriptorPoolSize::default()
-                            .descriptor_count(1)
-                            .ty(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)]),
-                    None,
-                )
-                .unwrap();
+        let images = unsafe { swapchain_loader.get_swapchain_images(swapchain) }.unwrap();
 
-            let quads_pipeline = Pipeline::build_pipeline(
-                &device,
-                include_spirv!("src/platform/windows/shaders/quad_vertex.glsl", vert),
-                include_spirv!("src/platform/windows/shaders/quad_fragment.glsl", frag),
-                renderpass,
-                desc_pool,
-            );
+        let image_views = images
+            .iter()
+            .map(|image| {
+                let create_info = vk::ImageViewCreateInfo::default()
+                    .image(*image)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(vk::Format::B8G8R8A8_UNORM)
+                    .subresource_range(
+                        vk::ImageSubresourceRange::default()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .level_count(1)
+                            .layer_count(1),
+                    );
 
-            let shadows_pipeline = Pipeline::build_pipeline(
-                &device,
-                include_spirv!("src/platform/windows/shaders/shadow_vertex.glsl", vert),
-                include_spirv!("src/platform/windows/shaders/shadow_fragment.glsl", frag),
-                renderpass,
-                desc_pool,
-            );
+                unsafe { device.create_image_view(&create_info, None) }.unwrap()
+            })
+            .collect::<Vec<_>>();
 
-            let underlines_pipeline = Pipeline::build_pipeline(
-                &device,
-                include_spirv!("src/platform/windows/shaders/underline_vertex.glsl", vert),
-                include_spirv!("src/platform/windows/shaders/underline_fragment.glsl", frag),
-                renderpass,
-                desc_pool,
-            );
+        let queue = unsafe { device.get_device_queue(0, 0) };
 
-            let framebuffers = image_views
-                .iter()
-                .map(|iv| {
-                    device
-                        .create_framebuffer(
-                            &vk::FramebufferCreateInfo::default()
-                                .render_pass(renderpass)
-                                .width(1424)
-                                .height(714)
-                                .layers(1)
-                                .attachments(&[*iv]),
-                            None,
-                        )
-                        .unwrap()
-                })
-                .collect::<Vec<_>>();
+        let cmd_pool = {
+            let create_info = vk::CommandPoolCreateInfo::default().queue_family_index(0);
 
-            let (buffer, mapped) = Self::create_buffer(&device);
+            unsafe { device.create_command_pool(&create_info, None).unwrap() }
+        };
 
-            Self {
-                sprite_atlas: Arc::new(VulkanAtlas::new()),
-                entry,
-                instance,
-                surface,
-                pdevice,
-                device,
-                swapchain_loader,
-                swapchain,
-                images,
-                queue,
-                cmd_pool,
-                renderpass,
-                quads_pipeline,
-                shadows_pipeline,
-                underlines_pipeline,
-                framebuffers,
-                desc_pool,
-                buffer,
-                mapped,
-            }
+        let renderpass = Self::create_renderpass(&device);
+
+        let desc_pool = {
+            let pool_size = [vk::DescriptorPoolSize::default()
+                .descriptor_count(1)
+                .ty(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)];
+            let create_info = vk::DescriptorPoolCreateInfo::default()
+                .max_sets(3)
+                .pool_sizes(&pool_size);
+
+            unsafe { device.create_descriptor_pool(&create_info, None) }.unwrap()
+        };
+
+        let desc_set_layout = Self::create_descriptor_set_layout(&device);
+
+        let desc_set = {
+            let allocate_info = vk::DescriptorSetAllocateInfo::default()
+                .descriptor_pool(desc_pool)
+                .set_layouts(std::slice::from_ref(&desc_set_layout));
+
+            unsafe { device.allocate_descriptor_sets(&allocate_info) }.unwrap()[0]
+        };
+
+        let quads_pipeline = Pipeline::build_pipeline(
+            &device,
+            include_spirv!("src/platform/windows/shaders/quad_vertex.glsl", vert),
+            include_spirv!("src/platform/windows/shaders/quad_fragment.glsl", frag),
+            renderpass,
+            desc_set_layout,
+        );
+
+        let shadows_pipeline = Pipeline::build_pipeline(
+            &device,
+            include_spirv!("src/platform/windows/shaders/shadow_vertex.glsl", vert),
+            include_spirv!("src/platform/windows/shaders/shadow_fragment.glsl", frag),
+            renderpass,
+            desc_set_layout,
+        );
+
+        let underlines_pipeline = Pipeline::build_pipeline(
+            &device,
+            include_spirv!("src/platform/windows/shaders/underline_vertex.glsl", vert),
+            include_spirv!("src/platform/windows/shaders/underline_fragment.glsl", frag),
+            renderpass,
+            desc_set_layout,
+        );
+
+        let framebuffers = image_views
+            .iter()
+            .map(|image_view| {
+                let create_info = vk::FramebufferCreateInfo::default()
+                    .render_pass(renderpass)
+                    .width(1424)
+                    .height(714)
+                    .layers(1)
+                    .attachments(std::slice::from_ref(&*image_view));
+
+                unsafe { device.create_framebuffer(&create_info, None) }.unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let (buffer, mapped) = Self::create_buffer(&device);
+
+        Self {
+            sprite_atlas: Arc::new(VulkanAtlas::new()),
+            entry,
+            instance,
+            surface,
+            pdevice,
+            device,
+            swapchain_loader,
+            swapchain,
+            images,
+            queue,
+            cmd_pool,
+            renderpass,
+            desc_set_layout,
+            desc_set,
+            quads_pipeline,
+            shadows_pipeline,
+            underlines_pipeline,
+            framebuffers,
+            desc_pool,
+            buffer,
+            mapped,
         }
     }
 
@@ -225,22 +239,13 @@ impl VulkanRenderer {
             let size_batches = std::mem::size_of_val(&scene.batches()) as u64;
 
             self.device.update_descriptor_sets(
-                &[
-                    vk::WriteDescriptorSet::default()
-                        .dst_set(self.quads_pipeline.desc_set)
-                        .descriptor_count(1)
-                        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
-                        .buffer_info(&[vk::DescriptorBufferInfo::default()
-                            .buffer(self.buffer)
-                            .range(size_batches)]),
-                    vk::WriteDescriptorSet::default()
-                        .dst_set(self.shadows_pipeline.desc_set)
-                        .descriptor_count(1)
-                        .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
-                        .buffer_info(&[vk::DescriptorBufferInfo::default()
-                            .buffer(self.buffer)
-                            .range(size_batches)]),
-                ],
+                &[vk::WriteDescriptorSet::default()
+                    .dst_set(self.desc_set)
+                    .descriptor_count(1)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
+                    .buffer_info(&[vk::DescriptorBufferInfo::default()
+                        .buffer(self.buffer)
+                        .range(size_batches)])],
                 &[],
             );
 
@@ -295,6 +300,7 @@ impl VulkanRenderer {
                             cmd_buffer,
                             offset as u32,
                             bytemuck::cast_slice(&[1424, 714]),
+                            self.desc_set,
                         );
 
                         self.device
@@ -317,6 +323,7 @@ impl VulkanRenderer {
                             cmd_buffer,
                             offset as u32,
                             bytemuck::cast_slice(&[1424, 714]),
+                            self.desc_set,
                         );
 
                         self.device
@@ -386,6 +393,19 @@ impl VulkanRenderer {
             .subpasses(std::slice::from_ref(&subpass_description));
 
         unsafe { device.create_render_pass(&create_info, None) }.unwrap()
+    }
+
+    fn create_descriptor_set_layout(device: &Device) -> vk::DescriptorSetLayout {
+        let descriptor_set_layout_binding = vk::DescriptorSetLayoutBinding::default()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER_DYNAMIC)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT);
+
+        let create_info = vk::DescriptorSetLayoutCreateInfo::default()
+            .bindings(std::slice::from_ref(&descriptor_set_layout_binding));
+
+        unsafe { device.create_descriptor_set_layout(&create_info, None) }.unwrap()
     }
 
     fn create_buffer(device: &Device) -> (vk::Buffer, *mut c_void) {
