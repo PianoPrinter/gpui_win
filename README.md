@@ -3,6 +3,7 @@
 Todos:
 - [ ] Resizable window
 - [ ] Support Sprite Rendering (which allows render fonts)
+- [ ] Fix all the hacks!!!! <- very important
 
 Supported rendering primitives:
 - [x] Quad
