@@ -23,6 +23,7 @@ pub(crate) struct WindowsTextSystem(RwLock<WindowsTextSystemState>);
 struct WindowsTextSystemState {
     memory_source: MemSource,
     system_source: SystemSource,
+    // font: fontdue::Font,
     // fonts: Vec<FontKitFont>,
     font_selections: HashMap<Font, FontId>,
     font_ids_by_postscript_name: HashMap<String, FontId>,
@@ -32,9 +33,17 @@ struct WindowsTextSystemState {
 
 impl WindowsTextSystem {
     pub(crate) fn new() -> Self {
+        // let font = fontdue::Font::from_bytes(
+        //     include_bytes!("a"),
+        //     fontdue::FontSettings {
+        //         ..Default::default()
+        //     },
+        // )
+        // .unwrap();
         Self(RwLock::new(WindowsTextSystemState {
             memory_source: MemSource::empty(),
             system_source: SystemSource::new(),
+            // font,
             // fonts: Vec::new(),
             font_selections: HashMap::default(),
             font_ids_by_postscript_name: HashMap::default(),
@@ -114,6 +123,18 @@ impl PlatformTextSystem for WindowsTextSystem {
         params: &crate::RenderGlyphParams,
         raster_bounds: crate::Bounds<crate::DevicePixels>,
     ) -> anyhow::Result<(crate::Size<crate::DevicePixels>, Vec<u8>)> {
+        // let (metrics, bitmap) = self
+        //     .0
+        //     .read()
+        //     .font
+        //     .rasterize(params.glyph_id as char, params.font_size.0);
+        // anyhow::Ok((
+        //     crate::Size {
+        //         width: metrics.width,
+        //         height: metrics.height,
+        //     },
+        //     bitmap,
+        // ))
         todo!()
     }
 

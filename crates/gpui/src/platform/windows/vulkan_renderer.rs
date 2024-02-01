@@ -332,7 +332,27 @@ impl VulkanRenderer {
                         offset += shadow_bytes_len;
                     }
                     PrimitiveBatch::Underlines(underlines) => {
-                        dbg!(underlines.len());
+                        // temporal fix on alignment, revisit later.
+                        offset = ((offset + 255) / 256) * 256;
+                        let underline_bytes_len = std::mem::size_of_val(underlines);
+                        std::ptr::copy_nonoverlapping(
+                            underlines.as_ptr() as *const u8,
+                            (self.mapped as *mut u8).add(offset),
+                            underline_bytes_len,
+                        );
+
+                        self.underlines_pipeline.bind(
+                            &self.device,
+                            cmd_buffer,
+                            offset as u32,
+                            bytemuck::cast_slice(&[1424, 714]),
+                            self.desc_set,
+                        );
+
+                        self.device
+                            .cmd_draw(cmd_buffer, 6, underlines.len() as u32, 0, 0);
+
+                        offset += underline_bytes_len;
                     }
                     _ => {}
                 }

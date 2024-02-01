@@ -3,7 +3,7 @@
 Supported rendering primitives:
 - [x] Quad
 - [x] Shadow
-- [ ] Underline
+- [x] Underline
 - [ ] Monochrome Sprite
 - [ ] Polychrome Sprite
 - [ ] Path
