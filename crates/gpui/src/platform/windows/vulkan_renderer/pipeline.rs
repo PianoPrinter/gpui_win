@@ -13,6 +13,8 @@ impl Pipeline {
         frag_code: &[u32],
         renderpass: vk::RenderPass,
         desc_set_layout: vk::DescriptorSetLayout,
+        width: i32,
+        height: i32,
     ) -> Self {
         let pipeline_layout = Self::create_pipeline_layout(device, desc_set_layout);
         let vert_shader_module = Self::create_shader_module(device, vert_code);
@@ -40,20 +42,21 @@ impl Pipeline {
         let scissor = [vk::Rect2D {
             offset: vk::Offset2D::default(),
             extent: vk::Extent2D {
-                width: 1424,
-                height: 714,
+                width: width as u32,
+                height: height as u32,
             },
         }];
 
+        let vp = [vk::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: width as f32,
+            height: height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        }];
         let viewport = vk::PipelineViewportStateCreateInfo::default()
-            .viewports(&[vk::Viewport {
-                x: 0.0,
-                y: 0.0,
-                width: 1424.0,
-                height: 714.0,
-                min_depth: 0.0,
-                max_depth: 1.0,
-            }])
+            .viewports(&vp)
             .scissors(&scissor);
 
         let rasterization = vk::PipelineRasterizationStateCreateInfo::default()

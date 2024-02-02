@@ -41,6 +41,8 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
 pub(crate) struct WindowsWindow(Arc<Mutex<WindowsWindowState>>);
 
 struct WindowsWindowState {
+    width: i32,
+    height: i32,
     renderer: VulkanRenderer,
     request_frame_callback: Option<Box<dyn FnMut()>>,
     event_callback: Option<Box<dyn FnMut(PlatformInput) -> bool>>,
@@ -90,8 +92,16 @@ impl WindowsWindow {
                 None,
             );
 
+            let mut rect = RECT::default();
+            GetClientRect(hwnd, &mut rect).unwrap();
+
+            let width = rect.right - rect.left;
+            let height = rect.bottom - rect.top;
+
             let window = Self(Arc::new(Mutex::new(WindowsWindowState {
-                renderer: VulkanRenderer::new(instance.0, hwnd.0),
+                width,
+                height,
+                renderer: VulkanRenderer::new(instance.0, hwnd.0, width, height),
                 request_frame_callback: None,
                 event_callback: None,
                 activate_callback: None,
@@ -118,9 +128,10 @@ impl PlatformWindow for WindowsWindow {
 
     fn content_size(&self) -> crate::Size<crate::Pixels> {
         // todo!()
+        let lock = self.0.lock();
         crate::Size {
-            width: crate::Pixels(1424.0),
-            height: crate::Pixels(714.0),
+            width: crate::Pixels(lock.width as f32),
+            height: crate::Pixels(lock.height as f32),
         }
     }
 

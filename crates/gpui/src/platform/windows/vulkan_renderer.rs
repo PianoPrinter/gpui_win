@@ -13,6 +13,8 @@ use super::vulkan_atlas::VulkanAtlas;
 
 #[allow(unused)]
 pub(crate) struct VulkanRenderer {
+    width: i32,
+    height: i32,
     sprite_atlas: Arc<VulkanAtlas>,
     entry: Entry,
     instance: Instance,
@@ -37,7 +39,7 @@ pub(crate) struct VulkanRenderer {
 }
 
 impl VulkanRenderer {
-    pub fn new(hinstance: isize, hwnd: isize) -> Self {
+    pub fn new(hinstance: isize, hwnd: isize, width: i32, height: i32) -> Self {
         let entry = unsafe { Entry::load().unwrap() };
 
         let instance = {
@@ -87,8 +89,8 @@ impl VulkanRenderer {
                 .image_color_space(vk::ColorSpaceKHR::SRGB_NONLINEAR)
                 .image_array_layers(1)
                 .image_extent(vk::Extent2D {
-                    width: 1424,
-                    height: 714,
+                    width: width as u32,
+                    height: height as u32,
                 })
                 .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
                 .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -158,6 +160,8 @@ impl VulkanRenderer {
             include_spirv!("src/platform/windows/shaders/quad_fragment.glsl", frag),
             renderpass,
             desc_set_layout,
+            width,
+            height,
         );
 
         let shadows_pipeline = Pipeline::build_pipeline(
@@ -166,6 +170,8 @@ impl VulkanRenderer {
             include_spirv!("src/platform/windows/shaders/shadow_fragment.glsl", frag),
             renderpass,
             desc_set_layout,
+            width,
+            height,
         );
 
         let underlines_pipeline = Pipeline::build_pipeline(
@@ -174,6 +180,8 @@ impl VulkanRenderer {
             include_spirv!("src/platform/windows/shaders/underline_fragment.glsl", frag),
             renderpass,
             desc_set_layout,
+            width,
+            height,
         );
 
         let framebuffers = image_views
@@ -181,8 +189,8 @@ impl VulkanRenderer {
             .map(|image_view| {
                 let create_info = vk::FramebufferCreateInfo::default()
                     .render_pass(renderpass)
-                    .width(1424)
-                    .height(714)
+                    .width(width as u32)
+                    .height(height as u32)
                     .layers(1)
                     .attachments(std::slice::from_ref(&*image_view));
 
@@ -193,6 +201,8 @@ impl VulkanRenderer {
         let (buffer, mapped) = Self::create_buffer(&device);
 
         Self {
+            width,
+            height,
             sprite_atlas: Arc::new(VulkanAtlas::new()),
             entry,
             instance,
@@ -275,8 +285,8 @@ impl VulkanRenderer {
                     .render_area(vk::Rect2D {
                         offset: vk::Offset2D { x: 0, y: 0 },
                         extent: vk::Extent2D {
-                            width: 1424,
-                            height: 714,
+                            width: self.width as u32,
+                            height: self.height as u32,
                         },
                     })
                     .framebuffer(self.framebuffers[index as usize]),
@@ -299,7 +309,7 @@ impl VulkanRenderer {
                             &self.device,
                             cmd_buffer,
                             offset as u32,
-                            bytemuck::cast_slice(&[1424, 714]),
+                            bytemuck::cast_slice(&[self.width, self.height]),
                             self.desc_set,
                         );
 
@@ -322,7 +332,7 @@ impl VulkanRenderer {
                             &self.device,
                             cmd_buffer,
                             offset as u32,
-                            bytemuck::cast_slice(&[1424, 714]),
+                            bytemuck::cast_slice(&[self.width, self.height]),
                             self.desc_set,
                         );
 
@@ -345,7 +355,7 @@ impl VulkanRenderer {
                             &self.device,
                             cmd_buffer,
                             offset as u32,
-                            bytemuck::cast_slice(&[1424, 714]),
+                            bytemuck::cast_slice(&[self.width, self.height]),
                             self.desc_set,
                         );
 
