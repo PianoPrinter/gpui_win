@@ -385,6 +385,9 @@ impl VulkanRenderer {
                 .unwrap();
 
             self.device
+                .free_command_buffers(self.cmd_pool, &[cmd_buffer]);
+
+            self.device
                 .wait_for_fences(&[fence], true, u64::MAX)
                 .unwrap();
 
