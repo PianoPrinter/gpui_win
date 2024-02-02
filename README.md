@@ -13,3 +13,6 @@ Supported rendering primitives:
 - [ ] Polychrome Sprite
 - [ ] Path
 - [ ] Surface
+
+Link to other projects:
+https://github.com/kvark/zed/tree/blade (Unofficial, user-made linux porting. Has better code completeness than mine, Highly recommended to someone interested in the actual codes behind platform porting. Even though it's for linux, still benefit reading)
